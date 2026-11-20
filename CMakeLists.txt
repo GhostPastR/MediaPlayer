@@ -44,6 +44,8 @@ add_executable(Playrer
     audiodevice.h
     mediaclock.h
     mediaclock.cpp
+    filtergraph.cpp
+    filtergraph.h
     widget.ui
 )
 
@@ -66,9 +68,9 @@ target_link_libraries(Playrer PRIVATE
     avfilter
 )
 
-#set_target_properties(Playrer PROPERTIES
-#    WIN32_EXECUTABLE $<IF:$<CONFIG:Debug>,FALSE,TRUE>
-#)
+set_target_properties(Playrer PROPERTIES
+    WIN32_EXECUTABLE $<IF:$<CONFIG:Debug>,FALSE,TRUE>
+)
 
 #if(WIN32)
 #    get_target_property(_qmake Qt5::qmake IMPORTED_LOCATION)

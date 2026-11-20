@@ -70,8 +70,6 @@ std::optional<CodecFormat> DecoderWorker::createDecoders()
     playerThread_ = new PlayerThread(mediaQueue_, mediaClock_, this);
     connect(playerThread_, &PlayerThread::frameReady, this,
             &DecoderWorker::frameReady, Qt::DirectConnection);
-//    connect(playerThread_, &PlayerThread::positionChanged, this,
-//            &DecoderWorker::positionChanged, Qt::DirectConnection);
 
     return audioDecoder_->createContext(audioIndex_);
 }
@@ -87,7 +85,6 @@ int DecoderWorker::getSecond() const
 void DecoderWorker::pause()
 {
     qDebug() << "DecoderWorker - Pause";
-//    pausePlayback();
     if(playerThread_){
         playerThread_->pausePlayback();
     }
@@ -101,7 +98,6 @@ void DecoderWorker::pause()
 
 void DecoderWorker::resume()
 {
-//    resumePlayback();
     if(playerThread_){
         playerThread_->resumePlayback();
     }
@@ -148,14 +144,14 @@ void DecoderWorker::setSpeed(double speed, double seconds)
     if(playerThread_){
         playerThread_->pausePlayback();
     }
+    videoQueue_->clear();
+    audioQueue_->clear();
+    mediaQueue_->clear();
 
     if(audioDecoder_){
         audioDecoder_->setSpeed(speed);
     }
 
-    videoQueue_->clear();
-    audioQueue_->clear();
-    mediaQueue_->clear();
     resumePlayback();
     if(videoDecoder_){
         videoDecoder_->resumePlayback();
@@ -196,7 +192,7 @@ void DecoderWorker::stop()
 
 void DecoderWorker::seek(double seconds)
 {
-    m_seekTarget = seconds;
+    seekTarget_ = seconds;
     seekRequested_ = true;
     if(videoDecoder_){
         videoDecoder_->seekFlush();
@@ -206,9 +202,6 @@ void DecoderWorker::seek(double seconds)
     }
     if(playerThread_){
         playerThread_->seekFlush(seconds);
-    }
-    if(mediaClock_){
-        mediaClock_->reset();
     }
 }
 
@@ -238,7 +231,7 @@ void DecoderWorker::start()
     while (!stopRequested_) {
         waitPaused();
         if (seekRequested_) {
-            double targetSec = m_seekTarget.load();
+            double targetSec = seekTarget_.load();
             qDebug() << "targetSecb = " << targetSec;
 
             // Перематываем все потоки к целевой позиции
@@ -266,7 +259,7 @@ void DecoderWorker::start()
             // Конец файла — маркеры конца
             videoQueue_->push(nullptr);
             audioQueue_->push(nullptr);
-            break;
+            continue;
         }
 
         if (packet->stream_index == videoIndex_) {

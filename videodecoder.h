@@ -36,12 +36,10 @@ private:
     std::shared_ptr<PacketQueue> queue_;
     std::shared_ptr<MediaQueue> mediaQueue_;
     Context context_;
-    SwsContext *swsContext_{};
-    AVFrame *frame_{};
     std::atomic<bool> flushRequested_{};
 
     bool createContext(int videoIdx);
-    bool createSwsContext();
+    bool createSwsContext(SwsContextPtr &contextPtr, const Frame& frame);
     void decoder();
 };
 

@@ -5,14 +5,6 @@
 
 #include <QDebug>
 
-extern "C" {
-#include <libavformat/avformat.h>
-//#include <libavcodec/avcodec.h>
-//#include <libavutil/avutil.h>
-#include <libswscale/swscale.h>
-//#include <libswresample/swresample.h>
-}
-
 VideoDecoder::VideoDecoder(AVFormatContext *formatContext, int videoIndex,
                            std::shared_ptr<PacketQueue> queue, std::shared_ptr<MediaQueue> mediaQueue,
                            QObject *parent) : QThread(parent)
@@ -21,17 +13,10 @@ VideoDecoder::VideoDecoder(AVFormatContext *formatContext, int videoIndex,
     queue_ = queue;
     videoIndex_ = videoIndex;
     mediaQueue_ = mediaQueue;
-    frame_ = av_frame_alloc();
 }
 
 VideoDecoder::~VideoDecoder()
 {
-    if (swsContext_){
-        sws_freeContext(swsContext_);
-    }
-    if(frame_){
-        av_frame_free(&frame_);
-    }
     if(context_.codec){
         avcodec_free_context(&context_.codec);
     }
@@ -62,7 +47,8 @@ void VideoDecoder::decoder()
 
     AVRational timeBase = context_.stream->time_base;
 
-    uint64_t i = 0;
+    Frame frame;
+    SwsContextPtr swsContext;
     while (!stopRequested_) {
         waitPaused();
 //         Обработка перемотки — сброс буферов декодера
@@ -74,34 +60,34 @@ void VideoDecoder::decoder()
 
         AVPacket *packet = queue_->pop();
         if (!packet){
-            break;
+            continue;
         }
 
         avcodec_send_packet(context_.codec, packet);
         av_packet_free(&packet);
 
-        while ((avcodec_receive_frame(context_.codec, frame_) == 0) && !stopRequested_) {
-            createSwsContext();
+        while ((avcodec_receive_frame(context_.codec, frame.get()) == 0) && !stopRequested_) {
+            createSwsContext(swsContext, frame);
 
-            if (frame_->flags & AV_FRAME_FLAG_CORRUPT) {
-                av_frame_unref(frame_);
+            if (frame.get()->flags & AV_FRAME_FLAG_CORRUPT) {
+                av_frame_unref(frame.get());
                 continue;
             }
 
-            if (frame_->pts == AV_NOPTS_VALUE) {
-                av_frame_unref(frame_);
+            if (frame->pts == AV_NOPTS_VALUE) {
+                av_frame_unref(frame.get());
                 continue; // пропускаем кадр без pts
             }
 
-            auto image = QImage(frame_->width, frame_->height, QImage::Format_RGB32);
+            auto image = QImage(frame->width, frame->height, QImage::Format_RGB32);
             uint8_t *destData[4] = { image.bits(), nullptr, nullptr, nullptr };
             int destLinesize[4] = { (int)image.bytesPerLine(), 0, 0, 0 };
-            sws_scale(swsContext_, frame_->data, frame_->linesize, 0,
-                      frame_->height, destData, destLinesize);
+            sws_scale(swsContext.get(), frame->data, frame->linesize, 0,
+                      frame->height, destData, destLinesize);
 
             MediaItem item;
             item.type = MediaItem::Type::Video;
-            item.pts = frame_->pts * av_q2d(timeBase);
+            item.pts = frame->pts * av_q2d(timeBase);
             item.image = std::move(image);
 
             if (!mediaQueue_->push(std::move(item))) {
@@ -110,12 +96,9 @@ void VideoDecoder::decoder()
                 }
             }
 
-            av_frame_unref(frame_);
+            av_frame_unref(frame.get());
         }
     }
-    MediaItem item;
-    item.type = MediaItem::Type::Finish;
-    mediaQueue_->push(std::move(item));
     qDebug() << "[VideoDecoder] завершён";
 }
 
@@ -145,16 +128,17 @@ bool VideoDecoder::createContext(int videoIdx)
     return false;
 }
 
-bool VideoDecoder::createSwsContext()
+bool VideoDecoder::createSwsContext(SwsContextPtr &contextPtr, const Frame& frame)
 {
-    if (!swsContext_) {
-        swsContext_ = sws_getContext(frame_->width, frame_->height,
-            (AVPixelFormat)frame_->format, frame_->width, frame_->height,
+    if (!contextPtr) {
+        auto ptr = sws_getContext(frame->width, frame->height,
+            (AVPixelFormat)frame->format, frame->width, frame->height,
             AV_PIX_FMT_RGB32, SWS_POINT, nullptr, nullptr, nullptr);
-        if (!swsContext_) {
-            av_frame_unref(frame_);
+        if (!ptr) {
+            av_frame_unref(frame.get());
             return false;
         }
+        contextPtr.reset(ptr);
     }
     return true;
 }

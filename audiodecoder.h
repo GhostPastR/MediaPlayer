@@ -52,22 +52,15 @@ private:
     std::shared_ptr<PacketQueue> queue_;
     std::shared_ptr<MediaClock> mediaClock_;
     Context context_;
-    AVFrame *frame_{};
 
-    AVFilterGraph *filterGraph_{};
-    AVFilterContext *bufferSrcCtx_{};
-    AVFilterContext *bufferSinkCtx_{};
-
-    std::atomic<bool> flushRequested_{false};
+    std::atomic<bool> flushRequested_{};
     std::atomic<double> speed_{1.0};
-    std::atomic<bool> speedChanged_{false};
-    std::atomic<double> seekTargetSec_{0.0};
+    std::atomic<bool> speedChanged_{};
+    std::atomic<double> seekTargetSec_{};
 
     std::unique_ptr<AudioDevice> audioDevice_;
 
     std::optional<std::pair<SwrContext*, SwrContext*> > createInOutSwrContext();
-    bool initFilterGraph(double speed);   // создание графа atempo
-    void freeFilterGraph();
     void decoder();
 };
 

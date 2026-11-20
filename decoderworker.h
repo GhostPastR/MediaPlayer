@@ -88,8 +88,8 @@ private:
     std::shared_ptr<MediaQueue> mediaQueue_;
     PlayerThread *playerThread_{};
 
-    std::atomic<bool> seekRequested_{false};
-    std::atomic<double> m_seekTarget{0.0};
+    std::atomic<bool> seekRequested_{};
+    std::atomic<double> seekTarget_{};
 
     std::shared_ptr<MediaClock> mediaClock_;
 

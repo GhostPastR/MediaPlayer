@@ -6,8 +6,9 @@
 
 #include "mediaclock.h"
 
-const double audioDelayMs = 300.0;
-const double renderDelayMs = 15.0;
+constexpr double audioDelayMs = 300.0;
+constexpr double renderDelayMs = 15.0;
+constexpr double msecInSec = 1000;
 
 double current_msec(){
     auto d = std::chrono::steady_clock::now().time_since_epoch();
@@ -49,6 +50,11 @@ void PlayerThread::resumePlayback()
     cvPause_.notify_all();
 }
 
+void PlayerThread::setSpeed(double speed)
+{
+    speedChanged_ = true;;
+}
+
 void PlayerThread::seekFlush(double targetSec)
 {
     qDebug() << "[seekFlush]" << targetSec;
@@ -62,17 +68,17 @@ void PlayerThread::run()
 {
     while (!stopRequested_) {
         waitPaused();
+        if(speedChanged_.exchange(false)){
+            pendingVideo_.clear();
+        }
 
         while (!pendingVideo_.empty()) {
-            auto &front = pendingVideo_.front();
-            if(front.type == MediaItem::Type::Finish) {
-                pendingVideo_.pop_front();
-                qDebug() << "[PlayerThread] завершён";
-                return;
+            if(speedChanged_.exchange(false)){
+                pendingVideo_.clear();
             }
+            auto &front = pendingVideo_.front();
             double ref = mediaClock_ ? mediaClock_->getReferenceTime() : 0.0;
             if (front.pts <= ref) {
-//                emit positionChanged((int)front.pts);
                 emit frameReady(std::make_shared<QImage>(std::move(front.image)));
                 pendingVideo_.pop_front();
             } else {
@@ -85,38 +91,9 @@ void PlayerThread::run()
             if (stopRequested_) break;
             continue;
         }
-        if(item.type == MediaItem::Type::Finish) {
-            pendingVideo_.push_back(std::move(item));
-        }
 
-        auto pts = item.pts * 1000;
-        if (flushRequested_) {
-            pendingVideo_.clear();
-            if(fastForward_ == 1){
-                if(pts >= seekTarget_ * 1000){
-                    fastForward_ = 0;
-                    qDebug() << "Flush 1" << seekTarget_ << pts;
-                    flushRequested_ = false;
-                }
-                else{
-                    continue;
-                }
-            }
-            else if(fastForward_ == -1){
-                if((lastSeekTarget_ == seekTarget_) ||
-                        (pts <= lastSeekTarget_ * 1000) && (pts >= seekTarget_ * 1000)){
-                    fastForward_ = 0;
-                    qDebug() << "Flush 2" << QString::number(seekTarget_ * 1000, 'f', 0)
-                             << QString::number(pts, 'f', 0);
-                    flushRequested_ = false;
-                }
-                else{
-                    continue;
-                }
-            }
-            else{
-                continue;
-            }
+        if(continueFrame(item.pts * msecInSec)){
+            continue;
         }
 
         // Отправляем в Widget
@@ -125,9 +102,38 @@ void PlayerThread::run()
             if (item.pts > ref) {
                 pendingVideo_.push_back(std::move(item));
             } else {
-//                emit positionChanged((int)item.pts);
                 emit frameReady(std::make_shared<QImage>(std::move(item.image)));
             }
         }
     }
+}
+
+bool PlayerThread::continueFrame(double pts)
+{
+    if (flushRequested_) {
+        pendingVideo_.clear();
+        if(fastForward_ == 1){
+            if(pts >= seekTarget_ * msecInSec){
+                fastForward_ = 0;
+                flushRequested_ = false;
+            }
+            else{
+                return true;
+            }
+        }
+        else if(fastForward_ == -1){
+            if((lastSeekTarget_ == seekTarget_) ||
+                    (pts <= lastSeekTarget_ * msecInSec) && (pts >= seekTarget_ * msecInSec)){
+                fastForward_ = 0;
+                flushRequested_ = false;
+            }
+            else{
+                return true;
+            }
+        }
+        else{
+            return true;
+        }
+    }
+    return false;
 }

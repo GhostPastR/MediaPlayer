@@ -27,9 +27,10 @@ public:
     void seekFlush(double targetSec);
     void resumePlayback();
 
+    void setSpeed(double speed);
+
 signals:
     void frameReady(std::shared_ptr<QImage> frame);
-    void positionChanged(int seconds);
 
 protected:
     void run() override;
@@ -42,6 +43,9 @@ private:
     std::atomic<double> seekTarget_{};
     std::atomic<double> lastSeekTarget_{};
     std::deque<MediaItem> pendingVideo_;
+    std::atomic<bool> speedChanged_{};
+
+    bool continueFrame(double pts);
 };
 
 #endif // PLAYERTHREAD_H

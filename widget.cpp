@@ -6,15 +6,20 @@
 #include <QLabel>
 #include <QThread>
 #include <QAudioOutput>
+#include <QFileDialog>
+#include <QStandardPaths>
 
 #include "videowidget.h"
 #include "decoderworker.h"
 #include "playerthread.h"
 
-constexpr int maxTimeSec = 1000;
-//const QString file = "C:/1.avi";
-//const QString file = "C:/2.avi";
-const QString file = "C:/3.mp3";
+constexpr int timeIntervalMSec = 100;
+constexpr int maxAudioVolume = 100;
+const QString mediaFile = QObject::tr("Медиафайлы (*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.mp3 *.wav *.flac *.aac *.ogg *.m4a);;"
+                             "Видео (*.mp4 *.avi *.mkv *.mov *.wmv *.flv);;"
+                             "Аудио (*.mp3 *.wav *.flac *.aac *.ogg *.m4a);;"
+                             "Все файлы (*.*)");
+const QString textTitle = QObject::tr("Открыть медиафайл");
 
 QString timeConvert(int seconds){
     return QString("%1:%2.%3")
@@ -98,11 +103,18 @@ void Widget::on_cbSpeedVideo_currentIndexChanged(int index)
 
 void Widget::openVideo()
 {
+    QString fileName = QFileDialog::getOpenFileName(this, textTitle,
+        QStandardPaths::writableLocation(QStandardPaths::MoviesLocation), mediaFile);
+    if(fileName.isEmpty()){
+        qDebug() << "Файл не выбран";
+        return;
+    }
+
     decodeThread_ = new QThread(this);
     decoder_ = new DecoderWorker();
     decoder_->moveToThread(decodeThread_);
 
-    auto info = decoder_->open(file);
+    auto info = decoder_->open(fileName);
     auto codec = decoder_->createDecoders();
     if(!codec.has_value()){
         qDebug() << "Error openVideo";
@@ -113,7 +125,7 @@ void Widget::openVideo()
     qDebug() << "Duration = " << info.duration_sec;
     qDebug() << "Count = " << info.count_stream;
 
-    auto max = /*info.duration_sec > 1000 ? 1000 : */durationVideo_;
+    auto max = durationVideo_;
     ui->sliderTime->setMaximum(max);
     ui->sliderTime->setSingleStep(durationVideo_ / max);
 
@@ -132,12 +144,13 @@ void Widget::openVideo()
     decoder_->setSpeed(speedVideo_, -1.0);
 
     qDebug() << "Audio volume " << decoder_->volume();
-    ui->audioVolume->setValue(100);
+    ui->audioVolume->setValue(maxAudioVolume);
 
     QTimer *timer = new QTimer(this);
-    timer->setInterval(1000);
+    timer->setInterval(timeIntervalMSec);
     connect(timer, &QTimer::timeout, this, [this]() {
         if(decoder_){
+//            qDebug() << "time - " << decoder_->getSecond();
             onPositionChanged(decoder_->getSecond());
         }
     });
@@ -166,7 +179,7 @@ int Widget::valueSlider(int value)
 void Widget::on_audioVolume_sliderMoved(int position)
 {
     if(decoder_){
-        auto volume = 2. * static_cast<float>(position) / ui->audioVolume->maximum();
+        auto volume = static_cast<float>(position) / ui->audioVolume->maximum();
         decoder_->setVolume(volume);
     }
 }

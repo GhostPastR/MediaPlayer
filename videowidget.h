@@ -32,9 +32,8 @@ private:
     std::shared_ptr<QImage> frontBuffer_;   // читает paintEvent
     std::shared_ptr<QImage> backBuffer_;    // пишет DecoderWorker
     std::mutex mutex_;
-    std::atomic<bool> updateScheduled_{false};
-    std::atomic<bool> resizing_{false};
-    QTimer m_resizeTimer;
+    std::atomic<bool> updateScheduled_{};
+    std::atomic<bool> resizing_{};
 };
 
 #endif // VIDEOWIDGET_H

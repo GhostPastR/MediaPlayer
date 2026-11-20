@@ -16,13 +16,12 @@ public:
 
     void pause();
     void resume();
-    void reset();
 
     double getReferenceTime() const;
 
 private:
-    std::atomic<double> audioTime_{0.0};
-    std::atomic<bool> audioEnded_{false};
+    std::atomic<double> audioTime_{};
+    std::atomic<bool> audioEnded_{};
 
     std::chrono::steady_clock::time_point endTime_{};
     std::chrono::steady_clock::time_point pausedAt_{};

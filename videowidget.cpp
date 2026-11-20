@@ -9,9 +9,9 @@ VideoWidget::VideoWidget(QWidget *parent)
     // Чёрный фон, чтобы не было артефактов до первого кадра
     setAttribute(Qt::WA_OpaquePaintEvent);
     setAutoFillBackground(false);
-//    setMinimumSize(320, 240);
-//    m_resizeTimer.setSingleShot(true);
-    connect(&m_resizeTimer, &QTimer::timeout, this, &VideoWidget::onResizeFinished);
+    QTimer *resizeTimer = new QTimer(this);
+    connect(resizeTimer, &QTimer::timeout, this, &VideoWidget::onResizeFinished);
+    resizeTimer->start(100);
 }
 
 void VideoWidget::setFrame(std::shared_ptr<QImage> frame)
@@ -87,5 +87,4 @@ void VideoWidget::resizeEvent(QResizeEvent *event)
 {
     resizing_ = true;
     QWidget::resizeEvent(event);
-    m_resizeTimer.start(100); // снимаем флаг через 100 мс после последнего ресайза
 }

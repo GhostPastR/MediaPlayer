@@ -24,7 +24,6 @@ struct MediaItem
 {
     enum class Type {
         Video,
-        Finish,
     };
 
     Type type = Type::Video;
@@ -43,5 +42,43 @@ struct MediaItemCompare
         return a.type < b.type;
     }
 };
+
+
+
+#include <memory>
+
+extern "C" {
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
+}
+
+class Frame {
+public:
+    Frame() : frame_(av_frame_alloc()) {}
+
+    AVFrame* get() const noexcept { return frame_.get(); }
+    AVFrame* operator->() const noexcept { return frame_.get(); }
+    explicit operator bool() const noexcept { return static_cast<bool>(frame_); }
+
+private:
+    struct Deleter {
+        void operator()(AVFrame* f) const noexcept {
+            if (f) av_frame_free(&f);
+        }
+    };
+    std::unique_ptr<AVFrame, Deleter> frame_;
+};
+
+
+
+struct SwsDeleter {
+    void operator()(SwsContext* ctx) const noexcept {
+        if (ctx) {
+            sws_freeContext(ctx);
+        }
+    }
+};
+
+using SwsContextPtr = std::unique_ptr<SwsContext, SwsDeleter>;
 
 #endif // MEDIASTRUCT_H
