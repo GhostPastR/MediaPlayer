@@ -13,8 +13,6 @@ Plays local media files with adjustable playback speed: **x1, x2, x3, x4**.
 - Volume control
 - Built with **Qt**, **FFmpeg**, and **miniaudio**
 
-> 💡 Tip: add at least one screenshot to the `screenshots/` folder and update the path above. A repo with images ranks better in search.
-
 ## Requirements
 
 - C++17 or later
