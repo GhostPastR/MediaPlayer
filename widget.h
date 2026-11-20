@@ -41,7 +41,7 @@ private:
     DecoderWorker *decoder_{};
     VideoWidget *videoWidget_{};
 
-    void openVideo();
+    bool openVideo();
     void closeVideo();
     int valueSlider(int value);
 };

@@ -82,6 +82,7 @@ void VideoDecoder::decoder()
             auto image = QImage(frame->width, frame->height, QImage::Format_RGB32);
             uint8_t *destData[4] = { image.bits(), nullptr, nullptr, nullptr };
             int destLinesize[4] = { (int)image.bytesPerLine(), 0, 0, 0 };
+
             sws_scale(swsContext.get(), frame->data, frame->linesize, 0,
                       frame->height, destData, destLinesize);
 
@@ -130,15 +131,21 @@ bool VideoDecoder::createContext(int videoIdx)
 
 bool VideoDecoder::createSwsContext(SwsContextPtr &contextPtr, const Frame& frame)
 {
-    if (!contextPtr) {
+    static int lastW = -1, lastH = -1, lastFmt = -1;
+
+    if (!contextPtr || lastW != frame->width || lastH != frame->height || lastFmt != frame->format) {
         auto ptr = sws_getContext(frame->width, frame->height,
             (AVPixelFormat)frame->format, frame->width, frame->height,
-            AV_PIX_FMT_RGB32, SWS_POINT, nullptr, nullptr, nullptr);
+            AV_PIX_FMT_RGB32, SWS_POINT | SWS_ACCURATE_RND, nullptr, nullptr, nullptr);
         if (!ptr) {
             av_frame_unref(frame.get());
             return false;
         }
         contextPtr.reset(ptr);
+
+        lastW = frame->width;
+        lastH = frame->height;
+        lastFmt = frame->format;
     }
     return true;
 }

@@ -53,12 +53,12 @@ Widget::~Widget()
 
 void Widget::on_pushButton_clicked()
 {
-    closeVideo();
-    openVideo();
-    isPaused_ = false;
+    if(openVideo()){
+        isPaused_ = false;
 
-    // Запускаем поток
-    decodeThread_->start();
+        // Запускаем поток
+        decodeThread_->start();
+    }
 }
 
 void Widget::on_pbPlay_clicked()
@@ -101,14 +101,15 @@ void Widget::on_cbSpeedVideo_currentIndexChanged(int index)
     }
 }
 
-void Widget::openVideo()
+bool Widget::openVideo()
 {
     QString fileName = QFileDialog::getOpenFileName(this, textTitle,
         QStandardPaths::writableLocation(QStandardPaths::MoviesLocation), mediaFile);
     if(fileName.isEmpty()){
         qDebug() << "Файл не выбран";
-        return;
+        return false;
     }
+    closeVideo();
 
     decodeThread_ = new QThread(this);
     decoder_ = new DecoderWorker();
@@ -155,6 +156,7 @@ void Widget::openVideo()
         }
     });
     timer->start();
+    return true;
 }
 
 void Widget::closeVideo()
