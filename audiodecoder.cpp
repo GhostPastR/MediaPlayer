@@ -202,8 +202,8 @@ void AudioDecoder::decoder()
 
         if (flushRequested_) {
             avcodec_flush_buffers(context_.codec);
-//            filterGraph.free();
-//            filterGraph.init(speed_.load(), context_.codec->sample_rate);
+            filterGraph.free();
+            filterGraph.init(speed_.load(), context_.codec->sample_rate);
             ptsOffset = 0;
             firstFrameAfterSeek = true;
             flushRequested_ = false;
@@ -252,8 +252,8 @@ void AudioDecoder::decoder()
                 fltFrame->pts += offsetToApply;
             }
 
-            filterGraph.avBuffersrc(fltFrame, filteredFrame, context_.codec->sample_rate, swrCtxOut,
-                                    mediaClock_, audioDevice_);
+            filterGraph.avBuffersrc(fltFrame, filteredFrame, context_.codec->sample_rate,
+                                    seekTargetSec_, swrCtxOut, mediaClock_, audioDevice_);
             av_frame_unref(frame.get());
         }
     }

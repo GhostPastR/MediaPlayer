@@ -19,7 +19,7 @@ public:
     bool init(double speed, int rate);   // создание графа atempo
     void free();
 
-    void avBuffersrc(const Frame &fltFrame, const Frame &filteredFrame, double rate,
+    void avBuffersrc(const Frame &fltFrame, const Frame &filteredFrame, double rate, double flush,
                      SwrContext* swrContextOut, std::shared_ptr<MediaClock> mediaClock,
                      std::unique_ptr<AudioDevice> &audioDevice);
 

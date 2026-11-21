@@ -111,7 +111,7 @@ void FilterGraph::free()
     }
 }
 
-void FilterGraph::avBuffersrc(const Frame &fltFrame, const Frame &filteredFrame, double rate,
+void FilterGraph::avBuffersrc(const Frame &fltFrame, const Frame &filteredFrame, double rate, double flush,
                               SwrContext *swrContextOut, std::shared_ptr<MediaClock> mediaClock,
                               std::unique_ptr<AudioDevice> &audioDevice)
 {
@@ -123,9 +123,10 @@ void FilterGraph::avBuffersrc(const Frame &fltFrame, const Frame &filteredFrame,
     while (av_buffersink_get_frame(bufferSinkCtx_, filteredFrame.get()) == 0) {
         AVRational outTb = av_buffersink_get_time_base(bufferSinkCtx_);
         double bufferedSec = audioDevice->bufferedFrames() / rate;
-        double outPtsSec = filteredFrame->pts * av_q2d(outTb) - bufferedSec;
+        double outPtsSec = filteredFrame->pts * av_q2d(outTb) - bufferedSec - flush;
         if(mediaClock){
-            mediaClock->setAudioTime(outPtsSec * speed_);
+//            qDebug() << "[FilterGraph]" << flush + outPtsSec * speed_;
+            mediaClock->setAudioTime(flush + outPtsSec * speed_);
         }
 
         // 4) FLT -> S16
