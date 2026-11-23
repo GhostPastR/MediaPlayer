@@ -19,4 +19,5 @@ Plays local media files with adjustable playback speed: **x0.5, x1, x1.5, x2, x2
 - Qt 5.14
 - FFmpeg (with libavcodec, libavformat, libavutil)
 - miniaudio
+- rubberband
 - CMake 3.16+
