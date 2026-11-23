@@ -3,12 +3,12 @@
 
 A cross‑platform video and audio player written in C++.
 
-Plays local media files with adjustable playback speed: **x1, x2, x3, x4**.
+Plays local media files with adjustable playback speed: **x0.5, x1, x1.5, x2, x2.5, x3, x3.5, x4**.
 
 ## Features
 
 - Playback of local video and audio files
-- Adjustable playback speed: x1, x2, x3, x4
+- Adjustable playback speed: x0.5, x1, x1.5, x2, x2.5, x3, x3.5, x4
 - Pause, resume, seek (forward/backward)
 - Volume control
 - Built with **Qt**, **FFmpeg**, and **miniaudio**
