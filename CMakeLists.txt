@@ -44,9 +44,11 @@ add_executable(Playrer
     audiodevice.h
     mediaclock.h
     mediaclock.cpp
-    filtergraph.cpp
-    filtergraph.h
+    rubberbandprocessor.cpp
+    rubberbandprocessor.h
     widget.ui
+
+    ../rubberband-default/single/RubberBandSingle.cpp
 )
 
 target_compile_options(Playrer PRIVATE
@@ -67,6 +69,9 @@ target_link_libraries(Playrer PRIVATE
     swresample
     avfilter
 )
+
+set(RUBBERBAND_ROOT "../rubberband-default")
+target_include_directories(Playrer PRIVATE "${RUBBERBAND_ROOT}/rubberband")
 
 set_target_properties(Playrer PROPERTIES
     WIN32_EXECUTABLE $<IF:$<CONFIG:Debug>,FALSE,TRUE>

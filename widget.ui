@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>627</width>
-    <height>436</height>
+    <width>616</width>
+    <height>433</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -163,15 +163,34 @@
         </item>
         <item>
          <widget class="QComboBox" name="cbSpeedVideo">
+          <property name="minimumSize">
+           <size>
+            <width>50</width>
+            <height>0</height>
+           </size>
+          </property>
           <property name="maximumSize">
            <size>
-            <width>35</width>
+            <width>50</width>
             <height>16777215</height>
            </size>
           </property>
+          <property name="currentIndex">
+           <number>1</number>
+          </property>
+          <item>
+           <property name="text">
+            <string>x0.5</string>
+           </property>
+          </item>
           <item>
            <property name="text">
             <string>x1</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>x1.5</string>
            </property>
           </item>
           <item>
@@ -181,7 +200,17 @@
           </item>
           <item>
            <property name="text">
+            <string>x2.5</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
             <string>x3</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>x3.5</string>
            </property>
           </item>
           <item>

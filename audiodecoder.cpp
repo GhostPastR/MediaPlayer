@@ -5,7 +5,7 @@
 
 #include "audiodevice.h"
 #include "mediaclock.h"
-#include "filtergraph.h"
+#include "rubberbandprocessor.h"
 
 #include <QDebug>
 
@@ -106,6 +106,23 @@ void AudioDecoder::run()
     decoder();
 }
 
+std::optional<SwrContext *> AudioDecoder::createOutSwrContext()
+{
+    auto swrCtxOut = swr_alloc_set_opts(nullptr,
+                                        AV_CH_LAYOUT_STEREO,
+                                        AV_SAMPLE_FMT_S16,
+                                        context_.codec->sample_rate,
+                                        AV_CH_LAYOUT_STEREO,       // FLTP стерео
+                                        AV_SAMPLE_FMT_FLTP,        // Внимание: planar float
+                                        context_.codec->sample_rate,
+                                        0, nullptr);
+        if (swr_init(swrCtxOut) < 0) {
+            qDebug() << "[AudioDecoder] swr_init(out) failed";
+            return {};
+        }
+        return swrCtxOut;
+}
+
 std::optional<CodecFormat> AudioDecoder::createContext(int audioIndex)
 {
     if(formatContext_){
@@ -131,88 +148,60 @@ std::optional<CodecFormat> AudioDecoder::createContext(int audioIndex)
     return {};
 }
 
-std::optional<std::pair<SwrContext*, SwrContext*>> AudioDecoder::createInOutSwrContext()
+void AudioDecoder::decoder()
 {
-    // декодер -> FLT (для atempo)
-    auto swrCtxIn = swr_alloc_set_opts(nullptr,
-                                        AV_CH_LAYOUT_STEREO,       // out layout (маска)
-                                        AV_SAMPLE_FMT_FLT,         // out format
-                                        context_.codec->sample_rate,
-                                        context_.codec->channel_layout, // in layout (маска)
-                                        context_.codec->sample_fmt,
-                                        context_.codec->sample_rate,
-                                        0, nullptr);
+    // 1) Входной SwrContext: декодер -> FLTP (planar float, 2 канала)
+    SwrContext* swrCtxIn = swr_alloc_set_opts(nullptr,
+        AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_FLTP, context_.codec->sample_rate,
+        context_.codec->channel_layout, context_.codec->sample_fmt,
+        context_.codec->sample_rate, 0, nullptr);
     if (swr_init(swrCtxIn) < 0) {
         qDebug() << "[AudioDecoder] swr_init(in) failed";
-        return {};
+        return;
     }
-    // FLT -> S16
-    auto swrCtxOut = swr_alloc_set_opts(nullptr,
-                                        AV_CH_LAYOUT_STEREO,
-                                        AV_SAMPLE_FMT_S16,
-                                        context_.codec->sample_rate,
-                                        AV_CH_LAYOUT_STEREO,       // FLT стерео
-                                        AV_SAMPLE_FMT_FLT,
-                                        context_.codec->sample_rate,
-                                        0, nullptr);
+
+    // 2) Выходной SwrContext: FLTP -> S16
+    SwrContext* swrCtxOut = swr_alloc_set_opts(nullptr,
+        AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, context_.codec->sample_rate,
+        AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_FLTP, context_.codec->sample_rate,
+        0, nullptr);
     if (swr_init(swrCtxOut) < 0) {
         qDebug() << "[AudioDecoder] swr_init(out) failed";
         swr_free(&swrCtxIn);
-        return {};
-    }
-    return {{swrCtxIn, swrCtxOut}};
-}
-
-void AudioDecoder::decoder()
-{
-    auto swrContext = createInOutSwrContext();
-    if(!swrContext.has_value()){
-        qDebug() << "[AudioDecoder] createSwrContext failed";
         return;
     }
 
-    auto [swrCtxIn, swrCtxOut] = swrContext.value();
-
-    FilterGraph filterGraph;
-
-    if (!filterGraph.init(speed_.load(), context_.codec->sample_rate)) {
-        qDebug() << "[AudioDecoder] init failed (initial)";
-        swr_free(&swrCtxIn);
-        swr_free(&swrCtxOut);
-        return;
-    }
+    RubberBandProcessor rbProcessor(context_.codec->sample_rate, 2);
+    rbProcessor.setSpeed(speed_.load());
 
     audioDevice_ = std::make_unique<AudioDevice>(context_.codec->sample_rate);
 
     Frame frame;
-    Frame filteredFrame;
     Frame fltFrame;
+    Frame filteredFrame;
 
     int64_t ptsOffset{};
     bool firstFrameAfterSeek{};
+
+    int64_t outputSamplesWritten_ = 0;
+
     while (!stopRequested_) {
         waitPaused();
 
-//        if (speedChanged_.exchange(false)) {
-//            filterGraph.free();
-//            if (!filterGraph.init(speed_.load(), context_.codec->sample_rate)) {
-//                qDebug() << "[AudioDecoder] init failed (speed change)";
-//            }
-//        }
-
         if (flushRequested_) {
             avcodec_flush_buffers(context_.codec);
-            filterGraph.free();
-            filterGraph.init(speed_.load(), context_.codec->sample_rate);
+            rbProcessor.reset(context_.codec->sample_rate, 2);
+            rbProcessor.setSpeed(speed_.load());
             ptsOffset = 0;
             firstFrameAfterSeek = true;
+            outputSamplesWritten_ = 0;
             flushRequested_ = false;
             continue;
         }
 
         AVPacket *packet = queue_->pop();
-        if (!packet){
-            if (mediaClock_){
+        if (!packet) {
+            if (mediaClock_) {
                 mediaClock_->setAudioEnded(true);
             }
             while (audioDevice_->notEmptyPcmRb() && !stopRequested_) {
@@ -225,13 +214,14 @@ void AudioDecoder::decoder()
         av_packet_free(&packet);
 
         while (avcodec_receive_frame(context_.codec, frame.get()) == 0 && !stopRequested_) {
-            // 1) декодер -> FLT
+            // 3) декодер -> FLTP
             int outSamples = swr_get_out_samples(swrCtxIn, frame->nb_samples);
 
             av_frame_unref(fltFrame.get());
-            fltFrame->format = AV_SAMPLE_FMT_FLT;
+            fltFrame->format = AV_SAMPLE_FMT_FLTP;
             fltFrame->sample_rate = context_.codec->sample_rate;
-            fltFrame->channels = context_.codec->channels;
+            fltFrame->channels = 2;
+            fltFrame->channel_layout = AV_CH_LAYOUT_STEREO;
             fltFrame->nb_samples = outSamples;
             av_frame_get_buffer(fltFrame.get(), 0);
 
@@ -239,7 +229,7 @@ void AudioDecoder::decoder()
                         (const uint8_t**)frame->data, frame->nb_samples);
             fltFrame->pts = frame->pts;
 
-            int64_t offsetToApply = 0;
+            // 4) Смещение PTS после seek
             if (firstFrameAfterSeek) {
                 AVRational inTb{1, context_.codec->sample_rate};
                 auto targetPts = av_rescale_q((int64_t)(seekTargetSec_ * AV_TIME_BASE),
@@ -247,18 +237,62 @@ void AudioDecoder::decoder()
                 ptsOffset = targetPts - fltFrame->pts;
                 firstFrameAfterSeek = false;
             }
-            offsetToApply = ptsOffset;
             if (fltFrame->pts != AV_NOPTS_VALUE) {
-                fltFrame->pts += offsetToApply;
+                fltFrame->pts += ptsOffset;
             }
 
-            filterGraph.avBuffersrc(fltFrame, filteredFrame, context_.codec->sample_rate,
-                                    seekTargetSec_, swrCtxOut, mediaClock_, audioDevice_);
+
+            rbProcessor.setSpeed(speed_.load());
+            const float* inputData[2] = {
+                reinterpret_cast<const float*>(fltFrame->data[0]),
+                reinterpret_cast<const float*>(fltFrame->data[1])
+            };
+            rbProcessor.process(inputData, fltFrame->nb_samples);
+
+            int avail = rbProcessor.available();
+            while (avail > 0) {
+                av_frame_unref(filteredFrame.get());
+                filteredFrame->format = AV_SAMPLE_FMT_FLTP;
+                filteredFrame->sample_rate = context_.codec->sample_rate;
+                filteredFrame->channels = 2;
+                filteredFrame->channel_layout = AV_CH_LAYOUT_STEREO;
+                filteredFrame->nb_samples = avail;
+                av_frame_get_buffer(filteredFrame.get(), 0);
+
+                float* outputData[2] = {
+                    reinterpret_cast<float*>(filteredFrame->data[0]),
+                    reinterpret_cast<float*>(filteredFrame->data[1])
+                };
+                size_t retrieved = rbProcessor.retrieve(outputData, avail);
+
+                int outSamples2 = swr_get_out_samples(swrCtxOut, retrieved);
+                int bufferSize = av_samples_get_buffer_size(nullptr, 2, outSamples2,
+                                                             AV_SAMPLE_FMT_S16, 1);
+                QByteArray pcm(bufferSize, 0);
+                uint8_t *outBuf = reinterpret_cast<uint8_t*>(pcm.data());
+
+                int converted = swr_convert(swrCtxOut, &outBuf, outSamples2,
+                                            (const uint8_t**)filteredFrame->data,
+                                            retrieved);
+                int actual = av_samples_get_buffer_size(nullptr, 2, converted, AV_SAMPLE_FMT_S16, 1);
+                audioDevice_->readData(pcm, actual);
+
+
+                // 9) Накопление и обновление MediaClock
+                outputSamplesWritten_ += retrieved;
+                if (mediaClock_) {
+                    double audioTime = (static_cast<double>(outputSamplesWritten_)
+                                        - audioDevice_->bufferedFrames()) / context_.codec->sample_rate;
+                    mediaClock_->setAudioTime(seekTargetSec_ + speed_.load() * audioTime);
+                }
+                avail = rbProcessor.available();
+            }
+
             av_frame_unref(frame.get());
         }
     }
+
     qDebug() << "[AudioDecoder] final";
     swr_free(&swrCtxIn);
     swr_free(&swrCtxOut);
 }
-

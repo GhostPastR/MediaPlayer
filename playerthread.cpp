@@ -79,6 +79,7 @@ void PlayerThread::run()
             auto &front = pendingVideo_.front();
             double ref = mediaClock_ ? mediaClock_->getReferenceTime() : 0.0;
             if (front.pts <= ref) {
+//                qDebug() << "frameReady2" << front.pts;
                 emit frameReady(std::make_shared<QImage>(std::move(front.image)));
                 pendingVideo_.pop_front();
             } else {

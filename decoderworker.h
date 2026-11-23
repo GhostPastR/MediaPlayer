@@ -49,7 +49,7 @@ public:
     explicit DecoderWorker(QObject *parent = nullptr);
     ~DecoderWorker();
 
-    InfoVideo open(const QString &filePath);
+    std::optional<InfoVideo> open(const QString &filePath);
     std::optional<CodecFormat> createDecoders();
     int getSecond() const;
 

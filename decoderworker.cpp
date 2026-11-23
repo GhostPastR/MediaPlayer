@@ -22,7 +22,7 @@ DecoderWorker::~DecoderWorker() {
     stop();
 }
 
-DecoderWorker::InfoVideo DecoderWorker::open(const QString &filePath)
+std::optional<DecoderWorker::InfoVideo> DecoderWorker::open(const QString &filePath)
 {
     QByteArray pathBytes = filePath.toLocal8Bit();
     int ret = avformat_open_input(&pFormatCtx_, pathBytes.constData(), nullptr, nullptr);
@@ -188,6 +188,8 @@ void DecoderWorker::stop()
     }
     delete playerThread_;
     playerThread_ = nullptr;
+
+    close();
 }
 
 void DecoderWorker::seek(double seconds)

@@ -60,7 +60,7 @@ private:
 
     std::unique_ptr<AudioDevice> audioDevice_;
 
-    std::optional<std::pair<SwrContext*, SwrContext*> > createInOutSwrContext();
+    std::optional<SwrContext*> createOutSwrContext();
     void decoder();
 };
 

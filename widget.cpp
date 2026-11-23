@@ -42,7 +42,6 @@ Widget::Widget(QWidget *parent)
     connect(ui->sliderTime, &SeekSlider::clickedAt, this, [this](int value) {
         emit seekRequested(valueSlider(value));
     });
-
 }
 
 Widget::~Widget()
@@ -93,8 +92,8 @@ void Widget::on_sliderTime_sliderMoved(int position)
 }
 
 void Widget::on_cbSpeedVideo_currentIndexChanged(int index)
-{
-    speedVideo_ = index + 1;
+{  
+    speedVideo_ = index * 0.5;
     if(decoder_){
         double time = valueSlider(ui->sliderTime->value());
         decoder_->setSpeed(speedVideo_, time);
@@ -113,18 +112,25 @@ bool Widget::openVideo()
 
     decodeThread_ = new QThread(this);
     decoder_ = new DecoderWorker();
+
+//    const QString fileName = "C:/1.avi";
+    auto info = decoder_->open(fileName);
+    if(!info.has_value()){
+        qDebug() << "Error openVideo";
+        return false;
+    }
+    auto codec = decoder_->createDecoders();
     decoder_->moveToThread(decodeThread_);
 
-    auto info = decoder_->open(fileName);
-    auto codec = decoder_->createDecoders();
     if(!codec.has_value()){
-        qDebug() << "Error openVideo";
+        qDebug() << "Error createDecoders";
+        return false;
     }
-    durationVideo_ = info.duration_sec;
+    durationVideo_ = info->duration_sec;
     ui->lbDuration->setText(timeConvert(durationVideo_));
-    qDebug() << "Format = " << QString::fromStdString(info.format);
-    qDebug() << "Duration = " << info.duration_sec;
-    qDebug() << "Count = " << info.count_stream;
+    qDebug() << "Format = " << QString::fromStdString(info->format);
+    qDebug() << "Duration = " << info->duration_sec;
+    qDebug() << "Count = " << info->count_stream;
 
     auto max = durationVideo_;
     ui->sliderTime->setMaximum(max);
@@ -142,7 +148,8 @@ bool Widget::openVideo()
     });
     connect(decoder_, &DecoderWorker::positionChanged, this, &Widget::onPositionChanged);
     connect(this, &Widget::seekRequested, decoder_, &DecoderWorker::seek, Qt::DirectConnection);
-    decoder_->setSpeed(speedVideo_, -1.0);
+
+    decoder_->setSpeed(speedVideo_, -1);
 
     qDebug() << "Audio volume " << decoder_->volume();
     ui->audioVolume->setValue(maxAudioVolume);
@@ -151,7 +158,6 @@ bool Widget::openVideo()
     timer->setInterval(timeIntervalMSec);
     connect(timer, &QTimer::timeout, this, [this]() {
         if(decoder_){
-//            qDebug() << "time - " << decoder_->getSecond();
             onPositionChanged(decoder_->getSecond());
         }
     });
