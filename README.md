@@ -11,7 +11,7 @@ Plays local media files with adjustable playback speed: **x0.5, x1, x1.5, x2, x2
 - Adjustable playback speed: x0.5, x1, x1.5, x2, x2.5, x3, x3.5, x4
 - Pause, resume, seek (forward/backward)
 - Volume control
-- Built with **Qt**, **FFmpeg**, and **miniaudio**
+- Built with **Qt**, **FFmpeg**, **rubberband** and **miniaudio**
 
 ## Requirements
 
