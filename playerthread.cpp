@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "mediaclock.h"
+#include "barrier.h"
 
 constexpr double audioDelayMs = 300.0;
 constexpr double renderDelayMs = 15.0;
@@ -15,12 +16,9 @@ double current_msec(){
     return std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
 }
 
-PlayerThread::PlayerThread(std::shared_ptr<MediaQueue> queue,
-                           std::shared_ptr<MediaClock> mediaClock,
-                           QObject *parent)
-    : QThread(parent), queue_(queue), mediaClock_(mediaClock)
-{
-}
+PlayerThread::PlayerThread(std::shared_ptr<MediaQueue> queue, std::shared_ptr<MediaClock> mediaClock,
+                           std::shared_ptr<Barrier> barrier, QObject *parent)
+    : QThread(parent), queue_(queue), mediaClock_(mediaClock), barrier_(barrier){}
 
 PlayerThread::~PlayerThread()
 {
@@ -52,23 +50,20 @@ void PlayerThread::resumePlayback()
 
 void PlayerThread::setSpeed(double speed)
 {
-    speedChanged_ = true;;
+    speedChanged_ = true;
 }
 
-void PlayerThread::seekFlush(double targetSec)
+void PlayerThread::seekFlush()
 {
-    qDebug() << "[seekFlush]" << targetSec;
-    lastSeekTarget_ = seekTarget_.load();
-    fastForward_ = (seekTarget_.exchange(targetSec) < targetSec) ? 1 : -1;
     flushRequested_ = true;
-    queue_->clear();
 }
 
 void PlayerThread::run()
 {
     while (!stopRequested_) {
         waitPaused();
-        if(speedChanged_.exchange(false)){
+        barrier_->arrive_and_wait();
+        if (flushRequested_.exchange(false)) {
             pendingVideo_.clear();
         }
 
@@ -79,7 +74,6 @@ void PlayerThread::run()
             auto &front = pendingVideo_.front();
             double ref = mediaClock_ ? mediaClock_->getReferenceTime() : 0.0;
             if (front.pts <= ref) {
-//                qDebug() << "frameReady2" << front.pts;
                 emit frameReady(std::make_shared<QImage>(std::move(front.image)));
                 pendingVideo_.pop_front();
             } else {
@@ -89,14 +83,11 @@ void PlayerThread::run()
 
         MediaItem item;
         if (!queue_->pop(item)) {
-            if (stopRequested_) break;
+            if (stopRequested_){
+                break;
+            }
             continue;
         }
-
-        if(continueFrame(item.pts * msecInSec)){
-            continue;
-        }
-
         // Отправляем в Widget
         if(item.type == MediaItem::Type::Video) {
             double ref = mediaClock_ ? mediaClock_->getReferenceTime() : 0.0;
@@ -107,34 +98,5 @@ void PlayerThread::run()
             }
         }
     }
-}
-
-bool PlayerThread::continueFrame(double pts)
-{
-    if (flushRequested_) {
-        pendingVideo_.clear();
-        if(fastForward_ == 1){
-            if(pts >= seekTarget_ * msecInSec){
-                fastForward_ = 0;
-                flushRequested_ = false;
-            }
-            else{
-                return true;
-            }
-        }
-        else if(fastForward_ == -1){
-            if((lastSeekTarget_ == seekTarget_) ||
-                    (pts <= lastSeekTarget_ * msecInSec) && (pts >= seekTarget_ * msecInSec)){
-                fastForward_ = 0;
-                flushRequested_ = false;
-            }
-            else{
-                return true;
-            }
-        }
-        else{
-            return true;
-        }
-    }
-    return false;
+    qDebug() << "[PlayerThread] завершён";
 }

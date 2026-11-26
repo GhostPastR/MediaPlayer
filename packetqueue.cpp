@@ -32,7 +32,7 @@ void PacketQueue::push(AVPacket *packet)
 AVPacket* PacketQueue::pop()
 {
     std::unique_lock<std::mutex> lock(m_mutex);
-    m_notEmpty.wait(lock, [this]() {
+    m_notEmpty.wait_for(lock, std::chrono::milliseconds(30), [this](){
         return !queue_.empty() || m_abort;
     });
     if (queue_.empty()) {

@@ -46,6 +46,8 @@ add_executable(Playrer
     mediaclock.cpp
     rubberbandprocessor.cpp
     rubberbandprocessor.h
+    barrier.h
+    barrier.cpp
     widget.ui
 
     ../rubberband-default/single/RubberBandSingle.cpp

@@ -13,18 +13,16 @@ class AVFrame;
 class AVFormatContext;
 class PacketQueue;
 class MediaClock;
-
-class AVFilterGraph;
-class AVFilterContext;
-
 class AudioDevice;
+class Barrier;
 
 class AudioDecoder : public QThread, public PauseStopDecoder
 {
     Q_OBJECT
 public:
     AudioDecoder(AVFormatContext *formatContext, std::shared_ptr<PacketQueue> queue,
-                 std::shared_ptr<MediaClock> mediaClock, QObject *parent = nullptr);
+                 std::shared_ptr<MediaClock> mediaClock, std::shared_ptr<Barrier> barrier,
+                 std::shared_ptr<Barrier> barrierAudio, QObject *parent = nullptr);
     ~AudioDecoder();
 
     void pause();
@@ -38,7 +36,6 @@ public:
     void stop();
     void seekFlush(double targetSec);
 
-    // Установка скорости (1.0, 2.0, 3.0, 4.0)
     void setSpeed(double speed);
 
 signals:
@@ -59,6 +56,8 @@ private:
     std::atomic<double> seekTargetSec_{};
 
     std::unique_ptr<AudioDevice> audioDevice_;
+    std::shared_ptr<Barrier> barrier_;
+    std::shared_ptr<Barrier> barrierAudio_;
 
     std::optional<SwrContext*> createOutSwrContext();
     void decoder();

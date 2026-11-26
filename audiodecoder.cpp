@@ -6,6 +6,7 @@
 #include "audiodevice.h"
 #include "mediaclock.h"
 #include "rubberbandprocessor.h"
+#include "barrier.h"
 
 #include <QDebug>
 
@@ -21,11 +22,15 @@ extern "C" {
 }
 
 AudioDecoder::AudioDecoder(AVFormatContext *formatContext, std::shared_ptr<PacketQueue> queue,
-                           std::shared_ptr<MediaClock> mediaClock, QObject *parent) : QThread(parent)
+                           std::shared_ptr<MediaClock> mediaClock, std::shared_ptr<Barrier> barrier,
+                           std::shared_ptr<Barrier> barrierAudio,
+                           QObject *parent) : QThread(parent)
 {
     formatContext_ = formatContext;
     queue_ = queue;
     mediaClock_ = mediaClock;
+    barrier_ = barrier;
+    barrierAudio_ = barrierAudio;
 }
 
 AudioDecoder::~AudioDecoder()
@@ -75,16 +80,15 @@ void AudioDecoder::setVolume(float volume)
 void AudioDecoder::stop()
 {
     stopPlayback();
+    if(audioDevice_){
+        audioDevice_->clearPcmRb();
+    }
     queue_->abort();
 }
 
 void AudioDecoder::seekFlush(double targetSec)
 {
     flushRequested_ = true;
-    queue_->clear();
-    if(audioDevice_){
-        audioDevice_->clearPcmRb();
-    }
     if (mediaClock_){
         mediaClock_->setAudioEnded(false);
     }
@@ -93,9 +97,6 @@ void AudioDecoder::seekFlush(double targetSec)
 
 void AudioDecoder::setSpeed(double speed)
 {
-    if (speed < 1.0){
-        speed = 1.0;
-    }
     qDebug() << "[AudioDecoder] setSpeed:" << speed;
     speed_ = speed;
     speedChanged_ = true;
@@ -179,23 +180,21 @@ void AudioDecoder::decoder()
     Frame frame;
     Frame fltFrame;
     Frame filteredFrame;
-
-    int64_t ptsOffset{};
-    bool firstFrameAfterSeek{};
+    AVRational timeBase = context_.stream->time_base;
 
     int64_t outputSamplesWritten_ = 0;
-
     while (!stopRequested_) {
         waitPaused();
-
-        if (flushRequested_) {
+        barrierAudio_->arrive_and_wait();
+        if (flushRequested_.exchange(false)) {
             avcodec_flush_buffers(context_.codec);
             rbProcessor.reset(context_.codec->sample_rate, 2);
             rbProcessor.setSpeed(speed_.load());
-            ptsOffset = 0;
-            firstFrameAfterSeek = true;
             outputSamplesWritten_ = 0;
-            flushRequested_ = false;
+            if(audioDevice_){
+                audioDevice_->clearPcmRb();
+            }
+            barrier_->release();
             continue;
         }
 
@@ -205,11 +204,10 @@ void AudioDecoder::decoder()
                 mediaClock_->setAudioEnded(true);
             }
             while (audioDevice_->notEmptyPcmRb() && !stopRequested_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::yield();
             }
             continue;
         }
-
         avcodec_send_packet(context_.codec, packet);
         av_packet_free(&packet);
 
@@ -227,20 +225,9 @@ void AudioDecoder::decoder()
 
             swr_convert(swrCtxIn, fltFrame->data, outSamples,
                         (const uint8_t**)frame->data, frame->nb_samples);
-            fltFrame->pts = frame->pts;
-
-            // 4) Смещение PTS после seek
-            if (firstFrameAfterSeek) {
-                AVRational inTb{1, context_.codec->sample_rate};
-                auto targetPts = av_rescale_q((int64_t)(seekTargetSec_ * AV_TIME_BASE),
-                                              AV_TIME_BASE_Q, inTb);
-                ptsOffset = targetPts - fltFrame->pts;
-                firstFrameAfterSeek = false;
+            if (frame->pts * av_q2d(timeBase) < seekTargetSec_) {
+                continue;
             }
-            if (fltFrame->pts != AV_NOPTS_VALUE) {
-                fltFrame->pts += ptsOffset;
-            }
-
 
             rbProcessor.setSpeed(speed_.load());
             const float* inputData[2] = {
@@ -258,7 +245,6 @@ void AudioDecoder::decoder()
                 filteredFrame->channel_layout = AV_CH_LAYOUT_STEREO;
                 filteredFrame->nb_samples = avail;
                 av_frame_get_buffer(filteredFrame.get(), 0);
-
                 float* outputData[2] = {
                     reinterpret_cast<float*>(filteredFrame->data[0]),
                     reinterpret_cast<float*>(filteredFrame->data[1])
@@ -270,29 +256,25 @@ void AudioDecoder::decoder()
                                                              AV_SAMPLE_FMT_S16, 1);
                 QByteArray pcm(bufferSize, 0);
                 uint8_t *outBuf = reinterpret_cast<uint8_t*>(pcm.data());
-
                 int converted = swr_convert(swrCtxOut, &outBuf, outSamples2,
                                             (const uint8_t**)filteredFrame->data,
                                             retrieved);
                 int actual = av_samples_get_buffer_size(nullptr, 2, converted, AV_SAMPLE_FMT_S16, 1);
                 audioDevice_->readData(pcm, actual);
-
-
-                // 9) Накопление и обновление MediaClock
                 outputSamplesWritten_ += retrieved;
+
                 if (mediaClock_) {
-                    double audioTime = (static_cast<double>(outputSamplesWritten_)
+                    const double audioTime = (static_cast<double>(outputSamplesWritten_)
                                         - audioDevice_->bufferedFrames()) / context_.codec->sample_rate;
                     mediaClock_->setAudioTime(seekTargetSec_ + speed_.load() * audioTime);
                 }
                 avail = rbProcessor.available();
             }
-
             av_frame_unref(frame.get());
         }
     }
 
-    qDebug() << "[AudioDecoder] final";
+    qDebug() << "[AudioDecoder] завершён";
     swr_free(&swrCtxIn);
     swr_free(&swrCtxOut);
 }

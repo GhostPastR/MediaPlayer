@@ -2,8 +2,11 @@
 #define AUDIODEVICE_H
 
 #include <atomic>
+#include <memory>
 #include <QByteArray>
 #include "miniaudio.h"
+
+class MediaClock;
 
 class AudioDevice
 {

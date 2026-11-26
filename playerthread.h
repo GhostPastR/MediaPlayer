@@ -13,18 +13,19 @@
 #include "pausedecoder.h"
 
 class MediaClock;
+class Barrier;
 
 class PlayerThread : public QThread, public PauseStopDecoder
 {
     Q_OBJECT
 public:
-    explicit PlayerThread(std::shared_ptr<MediaQueue> queue,
-                          std::shared_ptr<MediaClock> mediaClock, QObject *parent = nullptr);
+    explicit PlayerThread(std::shared_ptr<MediaQueue> queue, std::shared_ptr<MediaClock> mediaClock,
+                          std::shared_ptr<Barrier> barrier, QObject *parent = nullptr);
     ~PlayerThread() override;
 
     void pausePlayback();
     void stop();
-    void seekFlush(double targetSec);
+    void seekFlush();
     void resumePlayback();
 
     void setSpeed(double speed);
@@ -44,8 +45,7 @@ private:
     std::atomic<double> lastSeekTarget_{};
     std::deque<MediaItem> pendingVideo_;
     std::atomic<bool> speedChanged_{};
-
-    bool continueFrame(double pts);
+    std::shared_ptr<Barrier> barrier_;
 };
 
 #endif // PLAYERTHREAD_H

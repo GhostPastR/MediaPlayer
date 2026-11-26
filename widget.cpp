@@ -93,7 +93,7 @@ void Widget::on_sliderTime_sliderMoved(int position)
 
 void Widget::on_cbSpeedVideo_currentIndexChanged(int index)
 {  
-    speedVideo_ = index * 0.5;
+    speedVideo_ = (index + 1) * 0.5;
     if(decoder_){
         double time = valueSlider(ui->sliderTime->value());
         decoder_->setSpeed(speedVideo_, time);
@@ -114,6 +114,8 @@ bool Widget::openVideo()
     decoder_ = new DecoderWorker();
 
 //    const QString fileName = "C:/1.avi";
+//    const QString fileName = "C:/5.avi";
+//    const QString fileName = "C:/3.mp3";
     auto info = decoder_->open(fileName);
     if(!info.has_value()){
         qDebug() << "Error openVideo";

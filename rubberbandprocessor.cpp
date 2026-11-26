@@ -39,7 +39,10 @@ int RubberBandProcessor::getStartDelay() const
 
 void RubberBandProcessor::reset(int sampleRate, int channels)
 {
-    int options = RubberBand::RubberBandStretcher::OptionProcessRealTime;
+    int options = RubberBand::RubberBandStretcher::OptionProcessRealTime
+                | RubberBand::RubberBandStretcher::OptionEngineFiner
+                | RubberBand::RubberBandStretcher::OptionFormantPreserved
+                | RubberBand::RubberBandStretcher::OptionWindowShort;
     stretcher_ = std::make_unique<RubberBand::RubberBandStretcher>(
         sampleRate, channels, options, 1.0, 1.0);
 }

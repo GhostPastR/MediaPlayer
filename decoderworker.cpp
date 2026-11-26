@@ -11,6 +11,9 @@
 #include "mediaqueue.h"
 #include "playerthread.h"
 #include "mediaclock.h"
+#include "barrier.h"
+
+constexpr std::size_t countThread = 3;
 
 DecoderWorker::DecoderWorker(QObject *parent) : QObject(parent) {
     videoQueue_ = std::make_shared<PacketQueue>();
@@ -64,10 +67,13 @@ std::optional<CodecFormat> DecoderWorker::createDecoders()
     audioIndex_ = av_find_best_stream(pFormatCtx_, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
 
     mediaClock_ = std::make_shared<MediaClock>();
+    barrier_ = std::make_shared<Barrier>(2);
+    barrierAudio_ = std::make_shared<Barrier>(1);
 
-    videoDecoder_ = new VideoDecoder(pFormatCtx_, videoIndex_, videoQueue_, mediaQueue_, this);
-    audioDecoder_ = new AudioDecoder(pFormatCtx_, audioQueue_, mediaClock_, this);
-    playerThread_ = new PlayerThread(mediaQueue_, mediaClock_, this);
+    videoDecoder_ = new VideoDecoder(pFormatCtx_, videoIndex_, videoQueue_, mediaQueue_,
+                                     barrier_, this);
+    audioDecoder_ = new AudioDecoder(pFormatCtx_, audioQueue_, mediaClock_, barrier_, barrierAudio_, this);
+    playerThread_ = new PlayerThread(mediaQueue_, mediaClock_, barrier_, this);
     connect(playerThread_, &PlayerThread::frameReady, this,
             &DecoderWorker::frameReady, Qt::DirectConnection);
 
@@ -84,6 +90,7 @@ int DecoderWorker::getSecond() const
 
 void DecoderWorker::pause()
 {
+    paused_ = true;
     qDebug() << "DecoderWorker - Pause";
     if(playerThread_){
         playerThread_->pausePlayback();
@@ -98,6 +105,7 @@ void DecoderWorker::pause()
 
 void DecoderWorker::resume()
 {
+    paused_ = false;
     if(playerThread_){
         playerThread_->resumePlayback();
     }
@@ -111,6 +119,15 @@ void DecoderWorker::resume()
 
 void DecoderWorker::close()
 {
+    if(playerThread_){
+        playerThread_->stop();
+    }
+    if(audioDecoder_){
+        audioDecoder_->stop();
+    }
+    if(audioDecoder_){
+        videoDecoder_->stop();
+    }
     if(pFormatCtx_){
         avformat_close_input(&pFormatCtx_);
     }
@@ -134,33 +151,12 @@ void DecoderWorker::setVolume(float volume)
 void DecoderWorker::setSpeed(double speed, double seconds)
 {
     qDebug() << "[DecoderWorker::setSpeed]" << speed;
-    pausePlayback();
-    if(videoDecoder_){
-        videoDecoder_->pausePlayback();
-    }
-    if(audioDecoder_){
-        audioDecoder_->pausePlayback();
-    }
-    if(playerThread_){
-        playerThread_->pausePlayback();
-    }
-    videoQueue_->clear();
-    audioQueue_->clear();
-    mediaQueue_->clear();
-
     if(audioDecoder_){
         audioDecoder_->setSpeed(speed);
     }
-
-    resumePlayback();
-    if(videoDecoder_){
-        videoDecoder_->resumePlayback();
-    }
-    if(audioDecoder_){
-        audioDecoder_->resumePlayback();
-    }
-    if(playerThread_){
-        playerThread_->resumePlayback();
+    if(seconds > 0){
+        seekTarget_ = seconds;
+        seekRequested_ = true;
     }
 }
 
@@ -196,15 +192,6 @@ void DecoderWorker::seek(double seconds)
 {
     seekTarget_ = seconds;
     seekRequested_ = true;
-    if(videoDecoder_){
-        videoDecoder_->seekFlush();
-    }
-    if(audioDecoder_){
-        audioDecoder_->seekFlush(seconds);
-    }
-    if(playerThread_){
-        playerThread_->seekFlush(seconds);
-    }
 }
 
 void DecoderWorker::finish()
@@ -231,10 +218,32 @@ void DecoderWorker::start()
 
     AVPacket *packet = av_packet_alloc();
     while (!stopRequested_) {
-        waitPaused();
-        if (seekRequested_) {
+        if (seekRequested_.exchange(false)) {
+            barrier_->wait_all_arrived();
+            barrierAudio_->wait_all_arrived();
+
+            if(paused_){
+                if(playerThread_){
+                    playerThread_->resumePlayback();
+                }
+                if(audioDecoder_){
+                    audioDecoder_->resume();
+                }
+                if(mediaClock_){
+                    mediaClock_->resume();
+                }
+            }
+
             double targetSec = seekTarget_.load();
-            qDebug() << "targetSecb = " << targetSec;
+            if(videoDecoder_){
+                videoDecoder_->seekFlush(targetSec);
+            }
+            if(audioDecoder_){
+                audioDecoder_->seekFlush(targetSec);
+            }
+            if(playerThread_){
+                playerThread_->seekFlush();
+            }
 
             // Перематываем все потоки к целевой позиции
             int64_t targetUs = static_cast<int64_t>(targetSec * AV_TIME_BASE);
@@ -252,7 +261,19 @@ void DecoderWorker::start()
             videoQueue_->clear();
             audioQueue_->clear();
             mediaQueue_->clear();
-            seekRequested_ = false;
+
+            if(paused_){
+                if(playerThread_){
+                    playerThread_->resumePlayback();
+                }
+                if(audioDecoder_){
+                    audioDecoder_->resume();
+                }
+                if(mediaClock_){
+                    mediaClock_->resume();
+                }
+            }
+            barrierAudio_->release();
             continue;
         }
 
@@ -276,4 +297,5 @@ void DecoderWorker::start()
     }
 
     av_packet_free(&packet);
+    qDebug() << "[DecoderWorker] завершён";
 }

@@ -2,17 +2,19 @@
 
 #include "packetqueue.h"
 #include "mediaqueue.h"
+#include "barrier.h"
 
 #include <QDebug>
 
 VideoDecoder::VideoDecoder(AVFormatContext *formatContext, int videoIndex,
                            std::shared_ptr<PacketQueue> queue, std::shared_ptr<MediaQueue> mediaQueue,
-                           QObject *parent) : QThread(parent)
+                           std::shared_ptr<Barrier> barrier, QObject *parent) : QThread(parent)
 {
     formatContext_ = formatContext;
     queue_ = queue;
     videoIndex_ = videoIndex;
     mediaQueue_ = mediaQueue;
+    barrier_ = barrier;
 }
 
 VideoDecoder::~VideoDecoder()
@@ -28,9 +30,10 @@ void VideoDecoder::stop()
     queue_->abort();
 }
 
-void VideoDecoder::seekFlush()
+void VideoDecoder::seekFlush(double targetSec)
 {
     flushRequested_ = true;
+    seekTargetSec_ = targetSec;
 }
 
 void VideoDecoder::run()
@@ -49,12 +52,13 @@ void VideoDecoder::decoder()
 
     Frame frame;
     SwsContextPtr swsContext;
+
     while (!stopRequested_) {
         waitPaused();
-//         Обработка перемотки — сброс буферов декодера
-        if (flushRequested_) {
+        barrier_->arrive_and_wait();
+        if (flushRequested_.exchange(false)) {
+            // Обработка перемотки — сброс буферов декодера
             avcodec_flush_buffers(context_.codec);
-            flushRequested_ = false;
             continue;
         }
 
@@ -78,6 +82,10 @@ void VideoDecoder::decoder()
                 av_frame_unref(frame.get());
                 continue; // пропускаем кадр без pts
             }
+            auto time = frame->pts * av_q2d(timeBase);
+            if (time < seekTargetSec_) {
+                continue;
+            }
 
             auto image = QImage(frame->width, frame->height, QImage::Format_RGB32);
             uint8_t *destData[4] = { image.bits(), nullptr, nullptr, nullptr };
@@ -88,7 +96,7 @@ void VideoDecoder::decoder()
 
             MediaItem item;
             item.type = MediaItem::Type::Video;
-            item.pts = frame->pts * av_q2d(timeBase);
+            item.pts = time;
             item.image = std::move(image);
 
             if (!mediaQueue_->push(std::move(item))) {

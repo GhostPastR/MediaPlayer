@@ -39,7 +39,7 @@ void AudioDevice::readData(const QByteArray &pcm, int actual)
         ma_uint32 frames = framesToWrite - framesWritten;
         if (ma_pcm_rb_acquire_write(&rb_, &frames, &pMapped) != MA_SUCCESS || frames == 0) {
             // Буфер полон — притормозим, чтобы dataCallback успел прочитать
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            std::this_thread::yield();
             continue;
         }
         memcpy(pMapped, pcm.constData() + framesWritten * 4, frames * 4);
@@ -147,4 +147,5 @@ void AudioDevice::dataCallback(ma_device* pDevice, void* pOutput,
     if (framesRead < frameCount) {
         memset((char*)pOutput + framesRead * 4, 0, (frameCount - framesRead) * 4);
     }
+
 }

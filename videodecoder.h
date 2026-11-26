@@ -13,6 +13,7 @@ class AVFrame;
 class AVFormatContext;
 class PacketQueue;
 class MediaQueue;
+class Barrier;
 
 class VideoDecoder : public QThread, public PauseStopDecoder
 {
@@ -21,11 +22,11 @@ class VideoDecoder : public QThread, public PauseStopDecoder
 public:
     VideoDecoder(AVFormatContext *formatContext, int videoIndex,
                  std::shared_ptr<PacketQueue> queue, std::shared_ptr<MediaQueue> mediaQueue,
-                 QObject *parent = nullptr);
+                 std::shared_ptr<Barrier> barrier, QObject *parent = nullptr);
     ~VideoDecoder();
 
     void stop();
-    void seekFlush();
+    void seekFlush(double targetSec);
 
 protected:
     void run() override;
@@ -37,6 +38,8 @@ private:
     std::shared_ptr<MediaQueue> mediaQueue_;
     Context context_;
     std::atomic<bool> flushRequested_{};
+    std::atomic<double> seekTargetSec_{};
+    std::shared_ptr<Barrier> barrier_;
 
     bool createContext(int videoIdx);
     bool createSwsContext(SwsContextPtr &contextPtr, const Frame& frame);

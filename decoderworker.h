@@ -25,6 +25,7 @@ class AudioClock;
 class MediaQueue;
 class PlayerThread;
 class MediaClock;
+class Barrier;
 
 class DecoderWorker : public QObject, public PauseStopDecoder
 {
@@ -92,6 +93,8 @@ private:
     std::atomic<double> seekTarget_{};
 
     std::shared_ptr<MediaClock> mediaClock_;
+    std::shared_ptr<Barrier> barrier_;
+    std::shared_ptr<Barrier> barrierAudio_;
 
     void finish();
 };
