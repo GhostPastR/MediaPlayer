@@ -20,29 +20,11 @@ struct CodecFormat
     int sample_size{};
 };
 
-struct MediaItem
+struct VideoItem
 {
-    enum class Type {
-        Video,
-    };
-
-    Type type = Type::Video;
     double pts = 0.0;
     QImage image;
 };
-
-
-
-struct MediaItemCompare
-{
-    bool operator()(const MediaItem &a, const MediaItem &b) const {
-        if (a.pts != b.pts){
-            return a.pts < b.pts;
-        }
-        return a.type < b.type;
-    }
-};
-
 
 
 #include <memory>

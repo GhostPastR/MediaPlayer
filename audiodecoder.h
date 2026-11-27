@@ -6,15 +6,15 @@
 
 #include "pausedecoder.h"
 #include "mediastruct.h"
-
+#include "safequeue.h"
 
 class SwrContext;
-class AVFrame;
 class AVFormatContext;
-class PacketQueue;
 class MediaClock;
 class AudioDevice;
 class Barrier;
+
+using PacketQueue = SafeQueue<AVPacket*>;
 
 class AudioDecoder : public QThread, public PauseStopDecoder
 {
@@ -22,7 +22,7 @@ class AudioDecoder : public QThread, public PauseStopDecoder
 public:
     AudioDecoder(AVFormatContext *formatContext, std::shared_ptr<PacketQueue> queue,
                  std::shared_ptr<MediaClock> mediaClock, std::shared_ptr<Barrier> barrier,
-                 std::shared_ptr<Barrier> barrierAudio, QObject *parent = nullptr);
+                 QObject *parent = nullptr);
     ~AudioDecoder();
 
     void pause();
@@ -52,12 +52,10 @@ private:
 
     std::atomic<bool> flushRequested_{};
     std::atomic<double> speed_{1.0};
-    std::atomic<bool> speedChanged_{};
     std::atomic<double> seekTargetSec_{};
 
     std::unique_ptr<AudioDevice> audioDevice_;
     std::shared_ptr<Barrier> barrier_;
-    std::shared_ptr<Barrier> barrierAudio_;
 
     std::optional<SwrContext*> createOutSwrContext();
     void decoder();

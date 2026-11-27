@@ -1,24 +1,16 @@
 #include "decoderworker.h"
 #include <QDebug>
-#include <QThread>
-#include <QElapsedTimer>
-#include <QCoreApplication>
-#include <QTimer>
 
-#include "packetqueue.h"
 #include "videodecoder.h"
 #include "audiodecoder.h"
-#include "mediaqueue.h"
-#include "playerthread.h"
 #include "mediaclock.h"
 #include "barrier.h"
 
 constexpr std::size_t countThread = 3;
 
 DecoderWorker::DecoderWorker(QObject *parent) : QObject(parent) {
-    videoQueue_ = std::make_shared<PacketQueue>();
-    audioQueue_ = std::make_shared<PacketQueue>();
-    mediaQueue_ = std::make_shared<MediaQueue>();
+    videoQueue_ = std::make_shared<PacketQueue>(50);
+    audioQueue_ = std::make_shared<PacketQueue>(50);
 }
 
 DecoderWorker::~DecoderWorker() {
@@ -67,16 +59,12 @@ std::optional<CodecFormat> DecoderWorker::createDecoders()
     audioIndex_ = av_find_best_stream(pFormatCtx_, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
 
     mediaClock_ = std::make_shared<MediaClock>();
-    barrier_ = std::make_shared<Barrier>(2);
-    barrierAudio_ = std::make_shared<Barrier>(1);
+    barrier_ = std::make_shared<Barrier>(3);
 
-    videoDecoder_ = new VideoDecoder(pFormatCtx_, videoIndex_, videoQueue_, mediaQueue_,
-                                     barrier_, this);
-    audioDecoder_ = new AudioDecoder(pFormatCtx_, audioQueue_, mediaClock_, barrier_, barrierAudio_, this);
-    playerThread_ = new PlayerThread(mediaQueue_, mediaClock_, barrier_, this);
-    connect(playerThread_, &PlayerThread::frameReady, this,
+    videoDecoder_ = new VideoDecoder(pFormatCtx_, videoIndex_, videoQueue_, mediaClock_, barrier_, this);
+    connect(videoDecoder_, &VideoDecoder::frameReady, this,
             &DecoderWorker::frameReady, Qt::DirectConnection);
-
+    audioDecoder_ = new AudioDecoder(pFormatCtx_, audioQueue_, mediaClock_, barrier_, this);
     return audioDecoder_->createContext(audioIndex_);
 }
 
@@ -92,8 +80,8 @@ void DecoderWorker::pause()
 {
     paused_ = true;
     qDebug() << "DecoderWorker - Pause";
-    if(playerThread_){
-        playerThread_->pausePlayback();
+    if(videoDecoder_){
+        videoDecoder_->pause();
     }
     if(audioDecoder_){
         audioDecoder_->pause();
@@ -106,8 +94,8 @@ void DecoderWorker::pause()
 void DecoderWorker::resume()
 {
     paused_ = false;
-    if(playerThread_){
-        playerThread_->resumePlayback();
+    if(videoDecoder_){
+        videoDecoder_->resume();
     }
     if(audioDecoder_){
         audioDecoder_->resume();
@@ -119,14 +107,11 @@ void DecoderWorker::resume()
 
 void DecoderWorker::close()
 {
-    if(playerThread_){
-        playerThread_->stop();
+    if(videoDecoder_){
+        videoDecoder_->stop();
     }
     if(audioDecoder_){
         audioDecoder_->stop();
-    }
-    if(audioDecoder_){
-        videoDecoder_->stop();
     }
     if(pFormatCtx_){
         avformat_close_input(&pFormatCtx_);
@@ -178,13 +163,6 @@ void DecoderWorker::stop()
     delete audioDecoder_;
     audioDecoder_ = nullptr;
 
-    if(playerThread_){
-        playerThread_->stop();
-        playerThread_->wait();
-    }
-    delete playerThread_;
-    playerThread_ = nullptr;
-
     close();
 }
 
@@ -214,17 +192,15 @@ void DecoderWorker::start()
 
     videoDecoder_->start();
     audioDecoder_->start();
-    playerThread_->start();
 
     AVPacket *packet = av_packet_alloc();
     while (!stopRequested_) {
         if (seekRequested_.exchange(false)) {
             barrier_->wait_all_arrived();
-            barrierAudio_->wait_all_arrived();
 
             if(paused_){
-                if(playerThread_){
-                    playerThread_->resumePlayback();
+                if(videoDecoder_){
+                    videoDecoder_->resume();
                 }
                 if(audioDecoder_){
                     audioDecoder_->resume();
@@ -240,9 +216,6 @@ void DecoderWorker::start()
             }
             if(audioDecoder_){
                 audioDecoder_->seekFlush(targetSec);
-            }
-            if(playerThread_){
-                playerThread_->seekFlush();
             }
 
             // Перематываем все потоки к целевой позиции
@@ -260,11 +233,10 @@ void DecoderWorker::start()
             // Очищаем очереди от старых пакетов
             videoQueue_->clear();
             audioQueue_->clear();
-            mediaQueue_->clear();
 
             if(paused_){
-                if(playerThread_){
-                    playerThread_->resumePlayback();
+                if(videoDecoder_){
+                    videoDecoder_->resume();
                 }
                 if(audioDecoder_){
                     audioDecoder_->resume();
@@ -273,12 +245,16 @@ void DecoderWorker::start()
                     mediaClock_->resume();
                 }
             }
-            barrierAudio_->release();
+            barrier_->release();
             continue;
         }
 
         int ret = av_read_frame(pFormatCtx_, packet);
         if (ret < 0) {
+            char errbuf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(ret, errbuf, sizeof(errbuf));
+            qDebug() << "av_read_frame error:" << ret << errbuf;
+
             // Конец файла — маркеры конца
             videoQueue_->push(nullptr);
             audioQueue_->push(nullptr);

@@ -5,7 +5,6 @@
 
 #include <QWidget>
 #include <QImage>
-#include <QTimer>
 
 class VideoWidget : public QWidget
 {

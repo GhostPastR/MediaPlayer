@@ -25,7 +25,6 @@ private:
 
     std::chrono::steady_clock::time_point endTime_{};
     std::chrono::steady_clock::time_point pausedAt_{};
-    std::chrono::steady_clock::time_point lastUpdate_{};
     bool paused_ = false;
 };
 

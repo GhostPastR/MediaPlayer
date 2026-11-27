@@ -3,7 +3,6 @@
 
 #include <mutex>
 #include <condition_variable>
-#include <cstddef>
 
 class Barrier {
 public:
@@ -23,10 +22,10 @@ private:
     const std::size_t total_;
 
     // Состояние текущего раунда main
-    std::size_t round_       = 0;     // номер текущего раунда main
-    std::size_t arrived_     = 0;     // сколько пришло в этом раунде
-    bool        active_      = false; // main в wait_all_arrived
-    bool        released_    = false; // main дал сигнал
+    std::size_t round_{};     // номер текущего раунда main
+    std::size_t arrived_{};     // сколько пришло в этом раунде
+    bool active_{}; // main в wait_all_arrived
+    bool released_{}; // main дал сигнал
 };
 
 #endif // BARRIER_H

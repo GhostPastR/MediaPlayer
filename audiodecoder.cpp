@@ -1,8 +1,5 @@
 #include "audiodecoder.h"
 
-#include "packetqueue.h"
-#include "mediaqueue.h"
-
 #include "audiodevice.h"
 #include "mediaclock.h"
 #include "rubberbandprocessor.h"
@@ -11,26 +8,17 @@
 #include <QDebug>
 
 extern "C" {
-#include <libavformat/avformat.h>
-#include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
-#include <libavfilter/avfilter.h>
-#include <libavfilter/buffersrc.h>
-#include <libavfilter/buffersink.h>
-#include <libavcodec/avcodec.h>
-#include <libavutil/channel_layout.h>
 }
 
 AudioDecoder::AudioDecoder(AVFormatContext *formatContext, std::shared_ptr<PacketQueue> queue,
                            std::shared_ptr<MediaClock> mediaClock, std::shared_ptr<Barrier> barrier,
-                           std::shared_ptr<Barrier> barrierAudio,
                            QObject *parent) : QThread(parent)
 {
     formatContext_ = formatContext;
     queue_ = queue;
     mediaClock_ = mediaClock;
     barrier_ = barrier;
-    barrierAudio_ = barrierAudio;
 }
 
 AudioDecoder::~AudioDecoder()
@@ -99,7 +87,6 @@ void AudioDecoder::setSpeed(double speed)
 {
     qDebug() << "[AudioDecoder] setSpeed:" << speed;
     speed_ = speed;
-    speedChanged_ = true;
 }
 
 void AudioDecoder::run()
@@ -185,7 +172,7 @@ void AudioDecoder::decoder()
     int64_t outputSamplesWritten_ = 0;
     while (!stopRequested_) {
         waitPaused();
-        barrierAudio_->arrive_and_wait();
+        barrier_->arrive_and_wait();
         if (flushRequested_.exchange(false)) {
             avcodec_flush_buffers(context_.codec);
             rbProcessor.reset(context_.codec->sample_rate, 2);
@@ -194,12 +181,14 @@ void AudioDecoder::decoder()
             if(audioDevice_){
                 audioDevice_->clearPcmRb();
             }
-            barrier_->release();
             continue;
         }
 
-        AVPacket *packet = queue_->pop();
-        if (!packet) {
+        auto packet = queue_->pop();
+        if (!packet.has_value()) {
+            continue;
+        }
+        if (!packet.value()) {
             if (mediaClock_) {
                 mediaClock_->setAudioEnded(true);
             }
@@ -208,8 +197,8 @@ void AudioDecoder::decoder()
             }
             continue;
         }
-        avcodec_send_packet(context_.codec, packet);
-        av_packet_free(&packet);
+        avcodec_send_packet(context_.codec, packet.value());
+        av_packet_free(&packet.value());
 
         while (avcodec_receive_frame(context_.codec, frame.get()) == 0 && !stopRequested_) {
             // 3) декодер -> FLTP

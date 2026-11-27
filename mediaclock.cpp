@@ -1,7 +1,5 @@
 #include "mediaclock.h"
 
-#include <QDebug>
-
 MediaClock::MediaClock(){}
 
 void MediaClock::setAudioTime(double sec)

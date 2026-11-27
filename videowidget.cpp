@@ -1,6 +1,7 @@
 #include "videowidget.h"
 #include <QPainter>
 #include <QResizeEvent>
+#include <QTimer>
 #include <QDebug>
 
 VideoWidget::VideoWidget(QWidget *parent)

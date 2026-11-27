@@ -28,16 +28,10 @@ add_executable(Playrer
     seekslider.h
     videodecoder.cpp
     videodecoder.h
-    packetqueue.cpp
-    packetqueue.h
     pausedecoder.cpp
     pausedecoder.h
     audiodecoder.h
     audiodecoder.cpp
-    mediaqueue.cpp
-    mediaqueue.h
-    playerthread.cpp
-    playerthread.h
     mediastruct.h
     miniaudio.c
     audiodevice.cpp
@@ -48,6 +42,7 @@ add_executable(Playrer
     rubberbandprocessor.h
     barrier.h
     barrier.cpp
+    safequeue.h
     widget.ui
 
     ../rubberband-default/single/RubberBandSingle.cpp

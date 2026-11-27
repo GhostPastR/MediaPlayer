@@ -27,7 +27,6 @@ private slots:
     void onPositionChanged(int seconds);
     void on_sliderTime_sliderMoved(int position);
     void on_cbSpeedVideo_currentIndexChanged(int index);
-
     void on_audioVolume_sliderMoved(int position);
 
 private:

@@ -1,17 +1,15 @@
 #include "widget.h"
 #include "./ui_widget.h"
 
-#include <QDebug>
-#include <QDir>
-#include <QLabel>
 #include <QThread>
-#include <QAudioOutput>
 #include <QFileDialog>
 #include <QStandardPaths>
+#include <QTimer>
 
 #include "videowidget.h"
 #include "decoderworker.h"
-#include "playerthread.h"
+
+#include <QDebug>
 
 constexpr int timeIntervalMSec = 100;
 constexpr int maxAudioVolume = 100;

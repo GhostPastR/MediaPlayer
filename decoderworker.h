@@ -5,27 +5,17 @@
 #include <QImage>
 #include <QString>
 
-#include "miniaudio.h"
-
-extern "C" {
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libavutil/avutil.h>
-#include <libswscale/swscale.h>
-#include <libswresample/swresample.h>
-}
-
 #include "pausedecoder.h"
 #include "mediastruct.h"
+#include "safequeue.h"
 
-class PacketQueue;
 class VideoDecoder;
 class AudioDecoder;
 class AudioClock;
-class MediaQueue;
-class PlayerThread;
 class MediaClock;
 class Barrier;
+
+using PacketQueue = SafeQueue<AVPacket*>;
 
 class DecoderWorker : public QObject, public PauseStopDecoder
 {
@@ -86,15 +76,11 @@ private:
     std::shared_ptr<PacketQueue> audioQueue_;
     AudioDecoder* audioDecoder_{};
 
-    std::shared_ptr<MediaQueue> mediaQueue_;
-    PlayerThread *playerThread_{};
-
     std::atomic<bool> seekRequested_{};
     std::atomic<double> seekTarget_{};
 
     std::shared_ptr<MediaClock> mediaClock_;
     std::shared_ptr<Barrier> barrier_;
-    std::shared_ptr<Barrier> barrierAudio_;
 
     void finish();
 };

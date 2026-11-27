@@ -1,38 +1,63 @@
 #include "videodecoder.h"
 
-#include "packetqueue.h"
-#include "mediaqueue.h"
+#include "mediaclock.h"
 #include "barrier.h"
 
 #include <QDebug>
 
 VideoDecoder::VideoDecoder(AVFormatContext *formatContext, int videoIndex,
-                           std::shared_ptr<PacketQueue> queue, std::shared_ptr<MediaQueue> mediaQueue,
+                           std::shared_ptr<PacketQueue> queue,
+                           std::shared_ptr<MediaClock> mediaClock,
                            std::shared_ptr<Barrier> barrier, QObject *parent) : QThread(parent)
 {
     formatContext_ = formatContext;
     queue_ = queue;
     videoIndex_ = videoIndex;
-    mediaQueue_ = mediaQueue;
+    mediaClock_ = mediaClock;
     barrier_ = barrier;
 }
 
 VideoDecoder::~VideoDecoder()
 {
+    if (thread_.joinable()){
+        thread_.join();
+    }
     if(context_.codec){
         avcodec_free_context(&context_.codec);
     }
 }
 
+void VideoDecoder::pause()
+{
+    PauseStopDecoder::pausePlayback();
+}
+
+void VideoDecoder::resume()
+{
+    {
+        std::lock_guard<std::mutex> lock(pauseMutex_);
+        paused_ = false;
+    }
+    cvPause_.notify_all();
+}
+
+void VideoDecoder::setSpeed(double speed)
+{
+    speedChanged_ = true;
+}
+
 void VideoDecoder::stop()
 {
     stopPlayback();
-    queue_->abort();
+    if (queue_) {
+        queue_->abort();
+    }
 }
 
 void VideoDecoder::seekFlush(double targetSec)
 {
     flushRequested_ = true;
+    flushRequestedProcessing_ = true;
     seekTargetSec_ = targetSec;
 }
 
@@ -53,22 +78,28 @@ void VideoDecoder::decoder()
     Frame frame;
     SwsContextPtr swsContext;
 
+    auto mediaQueue = std::make_shared<MediaQueue>(50);
+    thread_ = std::thread([this, mediaQueue]() {
+        frameProcessing(mediaQueue);
+    });
+
     while (!stopRequested_) {
         waitPaused();
         barrier_->arrive_and_wait();
         if (flushRequested_.exchange(false)) {
+            mediaQueue->clear();
             // Обработка перемотки — сброс буферов декодера
             avcodec_flush_buffers(context_.codec);
             continue;
         }
 
-        AVPacket *packet = queue_->pop();
-        if (!packet){
+        auto packet = queue_->pop();
+        if (!packet.has_value() || !packet.value()){
             continue;
         }
 
-        avcodec_send_packet(context_.codec, packet);
-        av_packet_free(&packet);
+        avcodec_send_packet(context_.codec, packet.value());
+        av_packet_free(&packet.value());
 
         while ((avcodec_receive_frame(context_.codec, frame.get()) == 0) && !stopRequested_) {
             createSwsContext(swsContext, frame);
@@ -94,21 +125,55 @@ void VideoDecoder::decoder()
             sws_scale(swsContext.get(), frame->data, frame->linesize, 0,
                       frame->height, destData, destLinesize);
 
-            MediaItem item;
-            item.type = MediaItem::Type::Video;
+            VideoItem item;
             item.pts = time;
             item.image = std::move(image);
-
-            if (!mediaQueue_->push(std::move(item))) {
-                if (stopRequested_){
-                    break;
-                }
-            }
-
+            mediaQueue->push(std::move(item));
             av_frame_unref(frame.get());
         }
     }
     qDebug() << "[VideoDecoder] завершён";
+}
+
+void VideoDecoder::frameProcessing(std::shared_ptr<MediaQueue> queue)
+{
+    std::deque<VideoItem> pendingVideo;
+    while (!stopRequested_) {
+        waitPaused();
+        barrier_->arrive_and_wait();
+        if (flushRequestedProcessing_.exchange(false)) {
+            pendingVideo.clear();
+        }
+
+        while (!pendingVideo.empty()) {
+            if(speedChanged_.exchange(false)){
+                pendingVideo.clear();
+                continue;
+            }
+            auto &front = pendingVideo.front();
+            double ref = mediaClock_ ? mediaClock_->getReferenceTime() : 0.0;
+            if (front.pts <= ref) {
+                emit frameReady(std::make_shared<QImage>(std::move(front.image)));
+                pendingVideo.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        auto item = queue->pop();
+        if(!item.has_value()){
+            continue;
+        }
+
+        double ref = mediaClock_ ? mediaClock_->getReferenceTime() : 0.0;
+        if (item.value().pts > ref) {
+            pendingVideo.push_back(std::move(item.value()));
+        } else {
+            emit frameReady(std::make_shared<QImage>(std::move(item.value().image)));
+        }
+
+    }
+    qDebug() << "[FrameProcessing] завершён";
 }
 
 bool VideoDecoder::createContext(int videoIdx)
