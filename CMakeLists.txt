@@ -17,35 +17,35 @@ endif()
 find_package(Qt5 COMPONENTS Widgets Multimedia REQUIRED)
 
 add_executable(Playrer
-    main.cpp
-    widget.cpp
-    widget.h
-    videowidget.cpp
-    videowidget.h
-    decoderworker.cpp
-    decoderworker.h
-    seekslider.cpp
-    seekslider.h
-    videodecoder.cpp
-    videodecoder.h
-    pausedecoder.cpp
-    pausedecoder.h
-    audiodecoder.h
-    audiodecoder.cpp
-    mediastruct.h
-    miniaudio.c
-    audiodevice.cpp
-    audiodevice.h
-    mediaclock.h
-    mediaclock.cpp
-    rubberbandprocessor.cpp
-    rubberbandprocessor.h
-    barrier.h
-    barrier.cpp
-    safequeue.h
-    widget.ui
+    src/main.cpp
+    src/widget.cpp
+    src/widget.h
+    src/videowidget.cpp
+    src/videowidget.h
+    src/decoderworker.cpp
+    src/decoderworker.h
+    src/seekslider.cpp
+    src/seekslider.h
+    src/videodecoder.cpp
+    src/videodecoder.h
+    src/pausedecoder.cpp
+    src/pausedecoder.h
+    src/audiodecoder.h
+    src/audiodecoder.cpp
+    src/mediastruct.h
+    src/audiodevice.cpp
+    src/audiodevice.h
+    src/mediaclock.h
+    src/mediaclock.cpp
+    src/rubberbandprocessor.cpp
+    src/rubberbandprocessor.h
+    src/barrier.h
+    src/barrier.cpp
+    src/safequeue.h
+    src/widget.ui
 
-    ../rubberband-default/single/RubberBandSingle.cpp
+    submodule/miniaudio/miniaudio.c
+    submodule/rubberband-default/single/RubberBandSingle.cpp
 )
 
 target_compile_options(Playrer PRIVATE
@@ -54,6 +54,9 @@ target_compile_options(Playrer PRIVATE
 )
 
 target_link_libraries(Playrer PRIVATE Qt5::Widgets Qt5::Multimedia)
+target_include_directories(Playrer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/submodule/miniaudio)
 
 set(FFMPEG_ROOT "C:/ffmpeg")
 target_include_directories(Playrer PRIVATE "${FFMPEG_ROOT}/include")
@@ -67,7 +70,7 @@ target_link_libraries(Playrer PRIVATE
     avfilter
 )
 
-set(RUBBERBAND_ROOT "../rubberband-default")
+set(RUBBERBAND_ROOT "submodule/rubberband-default")
 target_include_directories(Playrer PRIVATE "${RUBBERBAND_ROOT}/rubberband")
 
 set_target_properties(Playrer PROPERTIES
