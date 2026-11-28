@@ -56,6 +56,8 @@ compile_commands.json
 *.log
 *.bak
 *.swp
+
+# User-specific files
 *.user
 
 # vcpkg
